@@ -13,3 +13,12 @@ func TestIsStringIn(t *testing.T) {
 		t.Errorf("Value 4 found?!?!?!")
 	}
 }
+
+func TestIsSeven(t *testing.T) {
+	if !IsSeven("7") {
+		t.Errorf("7 is Seven!")
+	}
+	if IsSeven("77") {
+		t.Errorf("77 is not Seven!")
+	}
+}
