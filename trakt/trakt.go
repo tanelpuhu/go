@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -172,4 +173,26 @@ func (c *Client) AddOAuthHeaders(req *http.Request) {
 	req.Header.Add("trakt-api-key", c.ID)
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("Authorization", "Bearer "+accessToken)
+}
+
+// GET ...
+func (c *Client) GET(path string) []byte {
+	path = strings.TrimLeft(path, "/")
+	log.Infof("GET %s", path)
+	req, err := http.NewRequest("GET", TraktAPIURL+path, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.AddOAuthHeaders(req)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return data
 }
