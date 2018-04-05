@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,8 +16,6 @@ import (
 )
 
 var (
-	// TokenFile holds the AccessToken and RefreshToken in it
-	TokenFile = os.ExpandEnv("$HOME/.go.trakt.json")
 	// TraktAPIURL ...
 	TraktAPIURL = "https://api.trakt.tv/"
 )
@@ -58,10 +58,23 @@ func New(id, secret string) *Client {
 	}
 }
 
+func getTokenFile() string {
+	var home string
+	home = os.Getenv("HOME")
+	if home == "" {
+		u, err := user.Current()
+		if err != nil {
+			log.Fatal(err)
+		}
+		home = u.HomeDir
+	}
+	return filepath.Join(home, ".go.trakt.json")
+}
+
 // Load tokens from local file
 func loadLocalTokens() (LocalTokens, error) {
 	var tokens LocalTokens
-	content, err := ioutil.ReadFile(TokenFile)
+	content, err := ioutil.ReadFile(getTokenFile())
 	if err != nil {
 		return tokens, fmt.Errorf("No token file")
 	}
@@ -74,7 +87,7 @@ func loadLocalTokens() (LocalTokens, error) {
 
 // Save tokens to local file
 func saveLocalTokens(t *LocalTokens) {
-	fp, err := os.OpenFile(TokenFile, os.O_CREATE|os.O_WRONLY, 0600)
+	fp, err := os.OpenFile(getTokenFile(), os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -178,7 +191,6 @@ func (c *Client) AddOAuthHeaders(req *http.Request) {
 // GET ...
 func (c *Client) GET(path string) []byte {
 	path = strings.TrimLeft(path, "/")
-	log.Infof("GET %s", path)
 	req, err := http.NewRequest("GET", TraktAPIURL+path, nil)
 	if err != nil {
 		log.Fatal(err)
