@@ -7,12 +7,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/tanelpuhu/go/paths"
 )
 
 var (
@@ -58,15 +58,10 @@ func New(id, secret string) *Client {
 	}
 }
 
-func getTokenFile() string {
-	var home string
-	home = os.Getenv("HOME")
-	if home == "" {
-		u, err := user.Current()
-		if err != nil {
-			log.Fatal(err)
-		}
-		home = u.HomeDir
+func getLocalTokensFileName() string {
+	home, err := paths.GetHome()
+	if err != nil {
+		log.Fatal(err)
 	}
 	return filepath.Join(home, ".go.trakt.json")
 }
@@ -74,9 +69,9 @@ func getTokenFile() string {
 // Load tokens from local file
 func loadLocalTokens() (LocalTokens, error) {
 	var tokens LocalTokens
-	content, err := ioutil.ReadFile(getTokenFile())
+	content, err := ioutil.ReadFile(getLocalTokensFileName())
 	if err != nil {
-		return tokens, fmt.Errorf("No token file")
+		return tokens, fmt.Errorf("no token file")
 	}
 	if err := json.Unmarshal(content, &tokens); err != nil {
 		log.Fatal(err)
@@ -87,7 +82,7 @@ func loadLocalTokens() (LocalTokens, error) {
 
 // Save tokens to local file
 func saveLocalTokens(t *LocalTokens) {
-	fp, err := os.OpenFile(getTokenFile(), os.O_CREATE|os.O_WRONLY, 0600)
+	fp, err := os.OpenFile(getLocalTokensFileName(), os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -117,7 +112,7 @@ func (c *Client) GetDeviceAccessToken() string {
 	var t LocalTokens
 	t, err := loadLocalTokens()
 	if err == nil && t.AccessToken != "" && t.RefreshToken != "" && t.ExpiresIn != 0 {
-		if t.CreatedAt+t.ExpiresIn > time.Now().Add(-time.Hour*24*10).Unix() {
+		if t.CreatedAt+t.ExpiresIn > time.Now().Add(time.Hour*24*7).Unix() {
 			return t.AccessToken
 		}
 	}
@@ -142,13 +137,11 @@ func (c *Client) GetDeviceAccessToken() string {
 			if time.Now().Unix() >= start.Unix()+tmp.ExpiresIn {
 				log.Fatal("You did not authorize, you need to start again")
 			}
-			rrr := AuthReq{
+			req, _ := traktPOSTJSON("oauth/device/token", AuthReq{
 				ClientID:     c.ID,
 				ClientSecret: c.Secret,
 				Code:         tmp.DeviceCode,
-			}
-			fmt.Printf("oauth/device/token. %s ...\n", rrr)
-			req, _ := traktPOSTJSON("oauth/device/token", rrr, &t)
+			}, &t)
 			if req.StatusCode == 200 {
 				saveLocalTokens(&t)
 				break
