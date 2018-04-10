@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -61,7 +62,7 @@ func New(id, secret string) *Client {
 func getLocalTokensFileName() string {
 	home, err := paths.GetHome()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error getting home path: %v", err)
 	}
 	return filepath.Join(home, ".go.trakt.json")
 }
@@ -74,7 +75,7 @@ func loadLocalTokens() (LocalTokens, error) {
 		return tokens, fmt.Errorf("no token file")
 	}
 	if err := json.Unmarshal(content, &tokens); err != nil {
-		log.Fatal(err)
+		log.Fatalf("error decoding local token file: %v", err)
 	}
 	return tokens, nil
 
@@ -84,24 +85,27 @@ func loadLocalTokens() (LocalTokens, error) {
 func saveLocalTokens(t *LocalTokens) {
 	fp, err := os.OpenFile(getLocalTokensFileName(), os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error opening local token file: %v", err)
 	}
-	res, _ := json.Marshal(t)
+	res, err := json.Marshal(t)
+	if err != nil {
+		log.Fatalf("error encoding token for local file: %v", err)
+	}
 	fp.Write(res)
 	fp.Close()
 
 }
 
-func traktPOSTJSON(path string, input interface{}, output interface{}) (*http.Response, []byte) {
+func traktAuthPOST(path string, input interface{}, output interface{}) (*http.Response, []byte) {
 	postdata, _ := json.Marshal(input)
 	req, err := http.Post(TraktAPIURL+path, "application/json", bytes.NewReader(postdata))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error making request: %v", err)
 	}
 	defer req.Body.Close()
 	resp, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error reading response: %v", err)
 	}
 	json.Unmarshal(resp, &output)
 	return req, resp
@@ -117,7 +121,7 @@ func (c *Client) GetDeviceAccessToken() string {
 		}
 	}
 	if t.RefreshToken != "" {
-		req, _ := traktPOSTJSON("oauth/token", AuthReq{
+		req, _ := traktAuthPOST("oauth/token", AuthReq{
 			ClientID:     c.ID,
 			ClientSecret: c.Secret,
 			RefreshToken: t.RefreshToken,
@@ -129,7 +133,7 @@ func (c *Client) GetDeviceAccessToken() string {
 		}
 	} else {
 		var tmp AuthReq
-		traktPOSTJSON("oauth/device/code", AuthReq{ClientID: c.ID}, &tmp)
+		traktAuthPOST("oauth/device/code", AuthReq{ClientID: c.ID}, &tmp)
 		start := time.Now()
 		fmt.Printf("Go to %s and enter code %s, i'll keep checking until you do...\n\n\n", tmp.VerificationURL, tmp.UserCode)
 		time.Sleep(5 * time.Second)
@@ -137,7 +141,7 @@ func (c *Client) GetDeviceAccessToken() string {
 			if time.Now().Unix() >= start.Unix()+tmp.ExpiresIn {
 				log.Fatal("You did not authorize, you need to start again")
 			}
-			req, _ := traktPOSTJSON("oauth/device/token", AuthReq{
+			req, _ := traktAuthPOST("oauth/device/token", AuthReq{
 				ClientID:     c.ID,
 				ClientSecret: c.Secret,
 				Code:         tmp.DeviceCode,
@@ -182,22 +186,42 @@ func (c *Client) AddOAuthHeaders(req *http.Request) {
 }
 
 // GET ...
-func (c *Client) GET(path string) []byte {
+func (c *Client) GET(path string, output interface{}) error {
+	return makeRequest(c, http.MethodGet, path, nil, &output)
+}
+
+// POST ...
+func (c *Client) POST(path string, input, output interface{}) error {
+	return makeRequest(c, http.MethodPost, path, &input, &output)
+}
+
+func makeRequest(c *Client, method, path string, input, output *interface{}) error {
 	path = strings.TrimLeft(path, "/")
-	req, err := http.NewRequest("GET", TraktAPIURL+path, nil)
+	var body io.Reader
+	if input != nil {
+		postdata, err := json.Marshal(input)
+		if err != nil {
+			log.Fatalf("error encoding to json: %v", err)
+		}
+		body = bytes.NewReader(postdata)
+	}
+	req, err := http.NewRequest(method, TraktAPIURL+path, body)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error creating request: %v", err)
 	}
 	c.AddOAuthHeaders(req)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error making request: %v", err)
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
+	content, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error reading response: %v", err)
 	}
-	return data
+	if err := json.Unmarshal(content, &output); err != nil {
+		log.Fatalf("error decoding response: %v - %s", err, content)
+	}
+	return nil
 }
