@@ -1,6 +1,6 @@
 # pushover
 
-	import "ithub.com/tanelpuhu/go/pushover"
+	import "github.com/tanelpuhu/go/pushover"
 	...
 	po := pushover.New(UserKey, APIToken)
 	po.Send("Title...", "This is message....")
