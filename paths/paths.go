@@ -22,7 +22,7 @@ func GetHome() (string, error) {
 
 // ExpandUser ...
 func ExpandUser(path string) (string, error) {
-	if len(path) > 0 && strings.HasPrefix(path, "~") {
+	if len(path) > 0 && strings.HasPrefix(path, "~/") {
 		home, err := GetHome()
 		if err != nil {
 			return "", err
